@@ -11,10 +11,13 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
+
 @CrossOrigin(origins = {
         "http://localhost:5174",
-        "https://online-quiz-exam-system-41kdmti76-shiva-abf2.vercel.app"
+        "https://online-quiz-exam-system.vercel.app",
+        "https://online-quiz-exam-system-k5hpeyzg6-shiva-abf2.vercel.app"
 })
+
 public class AuthController {
 
     private final StudentRepository repository;
