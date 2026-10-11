@@ -1,0 +1,16 @@
+
+### Add a question
+POST http://localhost:8080/api/questions
+Content-Type: application/json
+
+{
+  "questionText": "Which language is used with Spring Boot?",
+  "optionA": "Java",
+  "optionB": "HTML",
+  "optionC": "CSS",
+  "optionD": "SQL",
+  "correctAnswer": "A"
+}
+
+### Get all questions
+GET http://localhost:8080/api/questions

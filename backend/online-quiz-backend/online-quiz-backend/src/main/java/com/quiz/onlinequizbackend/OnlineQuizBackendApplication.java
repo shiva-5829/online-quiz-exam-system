@@ -1,3 +1,4 @@
+
 package com.quiz.onlinequizbackend;
 
 import org.springframework.boot.SpringApplication;
@@ -7,7 +8,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class OnlineQuizBackendApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(OnlineQuizBackendApplication.class, args);
+        SpringApplication.run(
+                OnlineQuizBackendApplication.class, args
+        );
     }
-
 }
