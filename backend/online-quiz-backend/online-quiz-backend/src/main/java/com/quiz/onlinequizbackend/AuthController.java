@@ -1,3 +1,4 @@
+
 package com.quiz.onlinequizbackend;
 
 import org.springframework.http.HttpStatus;
@@ -10,10 +11,14 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = "http://localhost:5174")
+@CrossOrigin(origins = {
+        "http://localhost:5174",
+        "https://online-quiz-exam-system-41kdmti76-shiva-abf2.vercel.app"
+})
 public class AuthController {
 
     private final StudentRepository repository;
+
     private final BCryptPasswordEncoder encoder =
             new BCryptPasswordEncoder();
 
@@ -32,17 +37,24 @@ public class AuthController {
         if (name == null || name.isBlank()
                 || email == null || email.isBlank()
                 || password == null || password.length() < 8) {
+
             return ResponseEntity.badRequest().body(
-                    Map.of("message",
-                            "Enter your name and email, and a password of at least 8 characters."));
+                    Map.of(
+                            "message",
+                            "Enter your name and email, and a password of at least 8 characters."
+                    )
+            );
         }
 
         email = email.trim().toLowerCase();
 
         if (repository.existsByEmail(email)) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Map.of("message",
-                            "This email is already registered."));
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                    Map.of(
+                            "message",
+                            "This email is already registered."
+                    )
+            );
         }
 
         Student student = new Student();
@@ -63,10 +75,15 @@ public class AuthController {
         String email = request.get("email");
         String password = request.get("password");
 
-        if (email == null || password == null) {
+        if (email == null || email.isBlank()
+                || password == null || password.isBlank()) {
+
             return ResponseEntity.badRequest().body(
-                    Map.of("message",
-                            "Email and password are required."));
+                    Map.of(
+                            "message",
+                            "Email and password are required."
+                    )
+            );
         }
 
         Student student = repository
@@ -75,10 +92,16 @@ public class AuthController {
 
         if (student == null
                 || !encoder.matches(
-                password, student.getPasswordHash())) {
+                password,
+                student.getPasswordHash())) {
+
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("message",
-                            "Invalid email or password."));
+                    .body(
+                            Map.of(
+                                    "message",
+                                    "Invalid email or password."
+                            )
+                    );
         }
 
         return ResponseEntity.ok(studentResponse(student));
