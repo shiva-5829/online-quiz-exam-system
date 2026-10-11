@@ -1,4 +1,3 @@
-```jsx
 import { useEffect, useState } from "react";
 import "./App.css";
 import AdminPanel from "./AdminPanel";
@@ -22,7 +21,7 @@ function App() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Load quiz questions after the student logs in.
+  // Load quiz questions after login.
   useEffect(() => {
     if (!student || showAdmin) return;
 
@@ -101,7 +100,7 @@ function App() {
     }
   }
 
-  // Submit the student's quiz answers.
+  // Submit quiz answers.
   async function submitQuiz() {
     setMessage("");
     setLoading(true);
@@ -166,7 +165,6 @@ function App() {
     margin: "5px",
   };
 
-  // Show the admin panel.
   if (showAdmin) {
     return <AdminPanel onBack={() => setShowAdmin(false)} />;
   }
@@ -386,4 +384,3 @@ function App() {
 }
 
 export default App;
-```
