@@ -19,7 +19,11 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/questions")
-@CrossOrigin(origins = "http://localhost:5174")
+@CrossOrigin(origins = {
+        "http://localhost:5174",
+        "https://online-quiz-exam-system.vercel.app",
+        "https://online-quiz-exam-system-k5hpeyzg6-shiva-abf2.vercel.app"
+})
 public class QuestionController {
 
     private final QuestionRepository questionRepository;
