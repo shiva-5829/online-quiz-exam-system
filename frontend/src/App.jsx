@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import AdminPanel from "./AdminPanel";
 
-const API = "http://localhost:8080/api";
+const API = "https://online-quiz-exam-system.onrender.com";
 
 function App() {
   const [student, setStudent] = useState(null);

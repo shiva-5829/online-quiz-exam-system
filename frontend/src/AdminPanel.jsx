@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
-const API = "http://localhost:8080/api";
+const API = "https://online-quiz-exam-system.onrender.com";
 
 function AdminPanel({ onBack }) {
     const [loggedIn, setLoggedIn] = useState(false);
