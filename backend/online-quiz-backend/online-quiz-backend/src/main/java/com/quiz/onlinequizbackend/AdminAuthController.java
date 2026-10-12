@@ -12,7 +12,11 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin-auth")
 @CrossOrigin(
-        origins = "http://localhost:5174",
+        origins = {
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "https://online-quiz-exam-system.vercel.app"
+        },
         allowCredentials = "true"
 )
 public class AdminAuthController {
