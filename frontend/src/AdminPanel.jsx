@@ -1,111 +1,170 @@
+
 import { useEffect, useState } from "react";
 import "./App.css";
 
 const API = "https://online-quiz-exam-system.onrender.com";
 
-function AdminPanel({ onBack }) {
+const EMPTY_FORM = {
+    questionText: "",
+    optionA: "",
+    optionB: "",
+    optionC: "",
+    optionD: "",
+    correctAnswer: "A",
+};
+
+async function apiRequest(path, options = {}) {
+    const response = await fetch(`${API}${path}`, {
+        ...options,
+        credentials: "include",
+        headers: {
+            ...(options.body ? { "Content-Type": "application/json" } : {}),
+            ...options.headers,
+        },
+    });
+
+    const text = await response.text();
+    let data = null;
+
+    try {
+        data = text ? JSON.parse(text) : null;
+    } catch {
+        data = text;
+    }
+
+    if (!response.ok) {
+        const error = new Error(
+            typeof data === "string"
+                ? data
+                : data?.message || `Request failed with status ${response.status}`
+        );
+        error.status = response.status;
+        throw error;
+    }
+
+    return data;
+}
+
+export default function AdminPanel({ onBack }) {
     const [loggedIn, setLoggedIn] = useState(false);
     const [checking, setChecking] = useState(true);
     const [username, setUsername] = useState("admin");
     const [password, setPassword] = useState("");
     const [questions, setQuestions] = useState([]);
+    const [form, setForm] = useState({ ...EMPTY_FORM });
     const [message, setMessage] = useState("");
-
-    const [form, setForm] = useState({
-        questionText: "",
-        optionA: "",
-        optionB: "",
-        optionC: "",
-        optionD: "",
-        correctAnswer: "A",
-    });
+    const [error, setError] = useState("");
+    const [busy, setBusy] = useState(false);
 
     useEffect(() => {
-        fetch(`${API}/admin-auth/check`, {
-            credentials: "include",
-        })
-            .then((response) => {
-                setLoggedIn(response.ok);
+        let active = true;
+
+        apiRequest("/api/admin-auth/check")
+            .then(() => {
+                if (active) setLoggedIn(true);
             })
-            .catch(() => {
-                setMessage("Backend is not running.");
+            .catch((err) => {
+                if (!active) return;
+
+                setLoggedIn(false);
+
+                if (err.status !== 401 && err.status !== 403) {
+                    setError(
+                        err.status === 404
+                            ? "Admin endpoint not found. Check the backend API routes."
+                            : "Could not check the admin session. Please try again."
+                    );
+                }
             })
             .finally(() => {
-                setChecking(false);
+                if (active) setChecking(false);
             });
+
+        return () => {
+            active = false;
+        };
     }, []);
 
     useEffect(() => {
         if (loggedIn) {
             loadQuestions();
         }
+        // Load questions when the login state changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loggedIn]);
 
     async function loadQuestions() {
+        setError("");
+        setBusy(true);
+
         try {
-            const response = await fetch(`${API}/admin/questions`, {
-                credentials: "include",
-            });
+            const data = await apiRequest("/api/admin/questions");
+            setQuestions(Array.isArray(data) ? data : []);
+        } catch (err) {
+            setError(
+                err.status === 401 || err.status === 403
+                    ? "Your admin session has expired. Please log in again."
+                    : err.message || "Unable to load questions."
+            );
 
-            if (response.status === 401) {
+            if (err.status === 401 || err.status === 403) {
                 setLoggedIn(false);
-                return;
             }
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.message || "Failed to load questions.");
-            }
-
-            setQuestions(data);
-        } catch (error) {
-            setMessage(error.message || "Unable to load questions.");
+        } finally {
+            setBusy(false);
         }
     }
 
     async function handleLogin(event) {
         event.preventDefault();
+        setError("");
         setMessage("");
+        setBusy(true);
 
         try {
-            const response = await fetch(`${API}/admin-auth/login`, {
+            await apiRequest("/api/admin-auth/login", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                credentials: "include",
-                body: JSON.stringify({ username, password }),
+                body: JSON.stringify({
+                    username: username.trim(),
+                    password,
+                }),
             });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                setMessage(data.message || "Invalid username or password.");
-                return;
-            }
 
             setPassword("");
             setLoggedIn(true);
             setMessage("Admin login successful.");
-        } catch {
-            setMessage("Cannot connect to the backend.");
+        } catch (err) {
+            setError(
+                err.status === 404
+                    ? "Admin login endpoint not found. Check the backend deployment."
+                    : err.status === 401 || err.status === 403
+                        ? "Invalid admin username or password."
+                        : err.message || "Unable to log in."
+            );
+        } finally {
+            setBusy(false);
         }
     }
 
     async function handleLogout() {
-        try {
-            await fetch(`${API}/admin-auth/logout`, {
-                method: "POST",
-                credentials: "include",
-            });
-        } catch {
-            // Continue clearing the admin screen.
-        }
+        setError("");
+        setMessage("");
+        setBusy(true);
 
-        setLoggedIn(false);
-        setQuestions([]);
-        setMessage("Admin logged out.");
+        try {
+            await apiRequest("/api/admin-auth/logout", {
+                method: "POST",
+            });
+
+            setMessage("Logged out successfully.");
+        } catch (err) {
+            setError(err.message || "Could not contact the logout endpoint.");
+        } finally {
+            setLoggedIn(false);
+            setQuestions([]);
+            setPassword("");
+            setBusy(false);
+        }
     }
 
     function handleChange(event) {
@@ -119,110 +178,116 @@ function AdminPanel({ onBack }) {
 
     async function addQuestion(event) {
         event.preventDefault();
+        setError("");
         setMessage("");
+        setBusy(true);
+
+        const payload = {
+            questionText: form.questionText.trim(),
+            optionA: form.optionA.trim(),
+            optionB: form.optionB.trim(),
+            optionC: form.optionC.trim(),
+            optionD: form.optionD.trim(),
+            correctAnswer: form.correctAnswer,
+        };
 
         try {
-            const response = await fetch(`${API}/admin/questions`, {
+            await apiRequest("/api/admin/questions", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                credentials: "include",
-                body: JSON.stringify(form),
+                body: JSON.stringify(payload),
             });
 
-            const data = await response.json();
-
-            if (!response.ok) {
-                setMessage(data.message || "Unable to add question.");
-
-                if (response.status === 401) {
-                    setLoggedIn(false);
-                }
-
-                return;
-            }
-
-            setForm({
-                questionText: "",
-                optionA: "",
-                optionB: "",
-                optionC: "",
-                optionD: "",
-                correctAnswer: "A",
-            });
-
+            setForm({ ...EMPTY_FORM });
             setMessage("Question added successfully.");
-            await loadQuestions();
-        } catch {
-            setMessage("Cannot connect to the backend.");
+
+            const data = await apiRequest("/api/admin/questions");
+            setQuestions(Array.isArray(data) ? data : []);
+        } catch (err) {
+            setError(err.message || "Unable to add question.");
+
+            if (err.status === 401 || err.status === 403) {
+                setLoggedIn(false);
+            }
+        } finally {
+            setBusy(false);
         }
     }
 
     async function deleteQuestion(id) {
-        if (!window.confirm("Delete this question?")) {
+        if (!window.confirm("Are you sure you want to delete this question?")) {
             return;
         }
 
+        setError("");
+        setMessage("");
+        setBusy(true);
+
         try {
-            const response = await fetch(
-                `${API}/admin/questions/${id}`,
-                {
-                    method: "DELETE",
-                    credentials: "include",
-                }
+            await apiRequest(`/api/admin/questions/${id}`, {
+                method: "DELETE",
+            });
+
+            setQuestions((previous) =>
+                previous.filter((question) => question.id !== id)
             );
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                setMessage(data.message || "Unable to delete question.");
-
-                if (response.status === 401) {
-                    setLoggedIn(false);
-                }
-
-                return;
-            }
-
             setMessage("Question deleted successfully.");
-            await loadQuestions();
-        } catch {
-            setMessage("Cannot connect to the backend.");
+        } catch (err) {
+            setError(err.message || "Unable to delete question.");
+
+            if (err.status === 401 || err.status === 403) {
+                setLoggedIn(false);
+            }
+        } finally {
+            setBusy(false);
         }
     }
 
     if (checking) {
-        return <div className="admin-container">Checking login...</div>;
+        return (
+            <div className="admin-container">
+                <p>Checking admin session...</p>
+            </div>
+        );
     }
 
     if (!loggedIn) {
         return (
             <div className="admin-container">
                 <h1>Admin Login</h1>
+                <p>Log in to manage quiz questions.</p>
 
                 <form className="admin-form" onSubmit={handleLogin}>
-                    <label>Username</label>
+                    <label htmlFor="admin-username">Username</label>
                     <input
+                        id="admin-username"
                         type="text"
                         value={username}
                         onChange={(event) => setUsername(event.target.value)}
+                        autoComplete="username"
                         required
                     />
 
-                    <label>Password</label>
+                    <label htmlFor="admin-password">Password</label>
                     <input
+                        id="admin-password"
                         type="password"
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
+                        autoComplete="current-password"
                         required
                     />
 
-                    <button type="submit">Login</button>
-                    <button type="button" onClick={onBack}>Back</button>
+                    <button type="submit" disabled={busy}>
+                        {busy ? "Please wait..." : "Login"}
+                    </button>
+
+                    <button type="button" onClick={onBack} disabled={busy}>
+                        Back
+                    </button>
                 </form>
 
-                {message && <p>{message}</p>}
+                {message && <p role="status">{message}</p>}
+                {error && <p role="alert">{error}</p>}
             </div>
         );
     }
@@ -231,7 +296,7 @@ function AdminPanel({ onBack }) {
         <div className="admin-container">
             <h1>Admin Panel</h1>
 
-            <button type="button" onClick={handleLogout}>
+            <button type="button" onClick={handleLogout} disabled={busy}>
                 Logout Admin
             </button>
 
@@ -242,60 +307,75 @@ function AdminPanel({ onBack }) {
             <h2>Add Question</h2>
 
             <form className="admin-form" onSubmit={addQuestion}>
-                <label>Question</label>
+                <label htmlFor="questionText">Question</label>
                 <textarea
+                    id="questionText"
                     name="questionText"
                     value={form.questionText}
                     onChange={handleChange}
                     required
                 />
 
-                <label>Option A</label>
-                <input name="optionA" value={form.optionA}
+                <label htmlFor="optionA">Option A</label>
+                <input id="optionA" name="optionA" value={form.optionA}
                        onChange={handleChange} required />
 
-                <label>Option B</label>
-                <input name="optionB" value={form.optionB}
+                <label htmlFor="optionB">Option B</label>
+                <input id="optionB" name="optionB" value={form.optionB}
                        onChange={handleChange} required />
 
-                <label>Option C</label>
-                <input name="optionC" value={form.optionC}
+                <label htmlFor="optionC">Option C</label>
+                <input id="optionC" name="optionC" value={form.optionC}
                        onChange={handleChange} required />
 
-                <label>Option D</label>
-                <input name="optionD" value={form.optionD}
+                <label htmlFor="optionD">Option D</label>
+                <input id="optionD" name="optionD" value={form.optionD}
                        onChange={handleChange} required />
 
-                <label>Correct Answer</label>
+                <label htmlFor="correctAnswer">Correct Answer</label>
                 <select
+                    id="correctAnswer"
                     name="correctAnswer"
                     value={form.correctAnswer}
                     onChange={handleChange}
                 >
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C">C</option>
-                    <option value="D">D</option>
+                    <option value="A">Option A</option>
+                    <option value="B">Option B</option>
+                    <option value="C">Option C</option>
+                    <option value="D">Option D</option>
                 </select>
 
-                <button type="submit">Add Question</button>
+                <button type="submit" disabled={busy}>
+                    {busy ? "Please wait..." : "Add Question"}
+                </button>
             </form>
 
-            {message && <p>{message}</p>}
+            {message && <p role="status">{message}</p>}
+            {error && <p role="alert">{error}</p>}
 
             <h2>Existing Questions ({questions.length})</h2>
 
+            <button type="button" onClick={loadQuestions} disabled={busy}>
+                Refresh Questions
+            </button>
+
+            {questions.length === 0 && <p>No questions found.</p>}
+
             {questions.map((question) => (
                 <div className="admin-question" key={question.id}>
-                    <p><strong>{question.questionText}</strong></p>
+                    <p>
+                        <strong>{question.questionText}</strong>
+                    </p>
                     <p>A. {question.optionA}</p>
                     <p>B. {question.optionB}</p>
                     <p>C. {question.optionC}</p>
                     <p>D. {question.optionD}</p>
+                    <p>Correct answer: {question.correctAnswer}</p>
 
                     <button
                         type="button"
                         onClick={() => deleteQuestion(question.id)}
+                        disabled={busy}
                     >
                         Delete
                     </button>
@@ -304,5 +384,3 @@ function AdminPanel({ onBack }) {
         </div>
     );
 }
-
-export default AdminPanel;
