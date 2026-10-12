@@ -1,386 +1,379 @@
+
 import { useEffect, useState } from "react";
-import "./App.css";
-import AdminPanel from "./AdminPanel";
 
 const API = "https://online-quiz-exam-system.onrender.com";
 
-function App() {
-  const [student, setStudent] = useState(null);
-  const [mode, setMode] = useState("login");
-  const [showAdmin, setShowAdmin] = useState(false);
+const emptyQuestion = {
+  questionText: "",
+  optionA: "",
+  optionB: "",
+  optionC: "",
+  optionD: "",
+  correctAnswer: "A",
+};
 
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
+async function apiRequest(path, options = {}) {
+  const response = await fetch(`${API}${path}`, {
+    ...options,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
   });
 
-  const [questions, setQuestions] = useState([]);
-  const [answers, setAnswers] = useState({});
-  const [result, setResult] = useState(null);
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
+  const text = await response.text();
+  let data = null;
 
-  // Load quiz questions after login.
-  useEffect(() => {
-    if (!student || showAdmin) return;
-
-    fetch(`${API}/api/questions`)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error("Failed to load questions");
-          }
-          return response.json();
-        })
-        .then((data) => {
-          setQuestions(data);
-          setMessage("");
-        })
-        .catch(() => {
-          setMessage("Could not load quiz questions.");
-        });
-  }, [student, showAdmin]);
-
-  function updateField(event) {
-    setForm({
-      ...form,
-      [event.target.name]: event.target.value,
-    });
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
   }
 
-  // Student registration and login.
-  async function handleAuth(event) {
+  if (!response.ok) {
+    throw new Error(
+        data?.message ||
+        (typeof data === "string" && data) ||
+        `Request failed (${response.status})`
+    );
+  }
+
+  return data;
+}
+
+export default function AdminPanel({ onBack }) {
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [questions, setQuestions] = useState([]);
+  const [form, setForm] = useState(emptyQuestion);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    apiRequest("/api/admin-auth/check")
+        .then(() => {
+          if (active) setLoggedIn(true);
+        })
+        .catch(() => {
+          if (active) setLoggedIn(false);
+        })
+        .finally(() => {
+          if (active) setChecking(false);
+        });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loggedIn) {
+      loadQuestions();
+    }
+    // loadQuestions is intentionally triggered when login status changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loggedIn]);
+
+  async function loadQuestions() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const data = await apiRequest("/api/admin/questions");
+      setQuestions(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err.message || "Could not load questions.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLogin(event) {
     event.preventDefault();
+    setError("");
     setMessage("");
     setLoading(true);
 
     try {
-      const endpoint = mode === "register" ? "register" : "login";
-
-      const payload =
-          mode === "register"
-              ? form
-              : {
-                email: form.email,
-                password: form.password,
-              };
-
-      const response = await fetch(`${API}/api/auth/${endpoint}`, {
+      await apiRequest("/api/admin-auth/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      setPassword("");
+      setLoggedIn(true);
+      setMessage("Admin login successful.");
+    } catch (err) {
+      setError(err.message || "Admin login failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleFormChange(event) {
+    const { name, value } = event.target;
+    setForm((previous) => ({ ...previous, [name]: value }));
+  }
+
+  async function handleAddQuestion(event) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    setLoading(true);
+
+    const payload = {
+      ...form,
+      questionText: form.questionText.trim(),
+      optionA: form.optionA.trim(),
+      optionB: form.optionB.trim(),
+      optionC: form.optionC.trim(),
+      optionD: form.optionD.trim(),
+      correctAnswer: form.correctAnswer.toUpperCase(),
+    };
+
+    try {
+      await apiRequest("/api/admin/questions", {
+        method: "POST",
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Request failed");
-      }
-
-      if (mode === "register") {
-        setMessage("Registration successful! Please log in.");
-        setMode("login");
-        setForm({
-          name: "",
-          email: form.email,
-          password: "",
-        });
-      } else {
-        setStudent(data);
-        setAnswers({});
-        setResult(null);
-        setMessage("");
-      }
-    } catch (error) {
-      setMessage(error.message || "Could not connect to backend.");
+      setForm({ ...emptyQuestion });
+      setMessage("Question added successfully.");
+      await loadQuestions();
+    } catch (err) {
+      setError(err.message || "Could not add question.");
     } finally {
       setLoading(false);
     }
   }
 
-  // Submit quiz answers.
-  async function submitQuiz() {
+  async function handleDeleteQuestion(id) {
+    if (!window.confirm("Are you sure you want to delete this question?")) {
+      return;
+    }
+
+    setError("");
     setMessage("");
     setLoading(true);
 
     try {
-      const response = await fetch(`${API}/api/questions/submit`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ answers }),
+      await apiRequest(`/api/admin/questions/${id}`, {
+        method: "DELETE",
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Submission failed");
-      }
-
-      setResult(data);
-    } catch (error) {
-      setMessage(error.message || "Could not submit quiz.");
+      setQuestions((previous) =>
+          previous.filter((question) => question.id !== id)
+      );
+      setMessage("Question deleted successfully.");
+    } catch (err) {
+      setError(err.message || "Could not delete question.");
     } finally {
       setLoading(false);
     }
   }
 
-  function logout() {
-    setStudent(null);
-    setQuestions([]);
-    setAnswers({});
-    setResult(null);
-    setForm({
-      name: "",
-      email: "",
-      password: "",
-    });
-    setMode("login");
-    setShowAdmin(false);
+  async function handleLogout() {
+    setError("");
     setMessage("");
+    setLoading(true);
+
+    try {
+      await apiRequest("/api/admin-auth/logout", {
+        method: "POST",
+      });
+
+      setLoggedIn(false);
+      setQuestions([]);
+      setMessage("Logged out successfully.");
+    } catch (err) {
+      setError(err.message || "Logout failed.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  const inputStyle = {
-    display: "block",
-    width: "100%",
-    boxSizing: "border-box",
-    padding: "12px",
-    margin: "10px 0",
-    borderRadius: "6px",
-    border: "1px solid #bbb",
-    fontSize: "16px",
-  };
+  if (checking) {
+    return (
+        <main className="admin-panel">
+          <p>Checking admin session...</p>
+        </main>
+    );
+  }
 
-  const buttonStyle = {
-    padding: "12px 20px",
-    border: "none",
-    borderRadius: "6px",
-    background: "#2457d6",
-    color: "white",
-    cursor: "pointer",
-    fontSize: "16px",
-    margin: "5px",
-  };
+  if (!loggedIn) {
+    return (
+        <main className="admin-panel">
+          <h2>Admin Login</h2>
+          <p>Sign in to manage quiz questions.</p>
 
-  if (showAdmin) {
-    return <AdminPanel onBack={() => setShowAdmin(false)} />;
+          {message && <p role="status">{message}</p>}
+          {error && <p role="alert" className="error-message">{error}</p>}
+
+          <form onSubmit={handleLogin}>
+            <label htmlFor="admin-username">Username</label>
+            <input
+                id="admin-username"
+                type="text"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                autoComplete="username"
+                required
+            />
+
+            <label htmlFor="admin-password">Password</label>
+            <input
+                id="admin-password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+            />
+
+            <button type="submit" disabled={loading}>
+              {loading ? "Please wait..." : "Login"}
+            </button>
+          </form>
+
+          <button type="button" onClick={onBack}>
+            Back to Quiz
+          </button>
+        </main>
+    );
   }
 
   return (
-      <main
-          style={{
-            maxWidth: "750px",
-            margin: "40px auto",
-            padding: "24px",
-            fontFamily: "Arial, sans-serif",
-            color: "#222",
-          }}
-      >
-        {!student ? (
-            <section
-                style={{
-                  maxWidth: "420px",
-                  margin: "auto",
-                  padding: "24px",
-                  border: "1px solid #ddd",
-                  borderRadius: "12px",
-                  boxShadow: "0 4px 16px #0001",
-                }}
+      <main className="admin-panel">
+        <header className="admin-header">
+          <h2>Admin Dashboard</h2>
+
+          <div>
+            <button type="button" onClick={loadQuestions} disabled={loading}>
+              Refresh
+            </button>
+            <button type="button" onClick={handleLogout} disabled={loading}>
+              Logout
+            </button>
+            <button type="button" onClick={onBack}>
+              Back to Quiz
+            </button>
+          </div>
+        </header>
+
+        {message && <p role="status">{message}</p>}
+        {error && <p role="alert" className="error-message">{error}</p>}
+
+        <section>
+          <h3>Add a Question</h3>
+
+          <form onSubmit={handleAddQuestion}>
+            <label htmlFor="questionText">Question</label>
+            <textarea
+                id="questionText"
+                name="questionText"
+                value={form.questionText}
+                onChange={handleFormChange}
+                required
+            />
+
+            <label htmlFor="optionA">Option A</label>
+            <input
+                id="optionA"
+                name="optionA"
+                value={form.optionA}
+                onChange={handleFormChange}
+                required
+            />
+
+            <label htmlFor="optionB">Option B</label>
+            <input
+                id="optionB"
+                name="optionB"
+                value={form.optionB}
+                onChange={handleFormChange}
+                required
+            />
+
+            <label htmlFor="optionC">Option C</label>
+            <input
+                id="optionC"
+                name="optionC"
+                value={form.optionC}
+                onChange={handleFormChange}
+                required
+            />
+
+            <label htmlFor="optionD">Option D</label>
+            <input
+                id="optionD"
+                name="optionD"
+                value={form.optionD}
+                onChange={handleFormChange}
+                required
+            />
+
+            <label htmlFor="correctAnswer">Correct Answer</label>
+            <select
+                id="correctAnswer"
+                name="correctAnswer"
+                value={form.correctAnswer}
+                onChange={handleFormChange}
+                required
             >
-              <h1>Online Quiz Exam System</h1>
+              <option value="A">Option A</option>
+              <option value="B">Option B</option>
+              <option value="C">Option C</option>
+              <option value="D">Option D</option>
+            </select>
 
-              <h2>
-                {mode === "register"
-                    ? "Student Registration"
-                    : "Student Login"}
-              </h2>
+            <button type="submit" disabled={loading}>
+              {loading ? "Please wait..." : "Add Question"}
+            </button>
+          </form>
+        </section>
 
-              <form onSubmit={handleAuth}>
-                {mode === "register" && (
-                    <input
-                        style={inputStyle}
-                        name="name"
-                        placeholder="Full name"
-                        value={form.name}
-                        onChange={updateField}
-                        required
-                    />
-                )}
+        <section>
+          <h3>Existing Questions ({questions.length})</h3>
 
-                <input
-                    style={inputStyle}
-                    type="email"
-                    name="email"
-                    placeholder="Email address"
-                    value={form.email}
-                    onChange={updateField}
-                    required
-                />
+          {loading && <p>Loading...</p>}
 
-                <input
-                    style={inputStyle}
-                    type="password"
-                    name="password"
-                    placeholder="Password (at least 8 characters)"
-                    value={form.password}
-                    onChange={updateField}
-                    minLength={mode === "register" ? 8 : undefined}
-                    required
-                />
+          {!loading && questions.length === 0 && (
+              <p>No questions found.</p>
+          )}
 
-                <button
-                    style={buttonStyle}
-                    type="submit"
-                    disabled={loading}
-                >
-                  {loading
-                      ? "Please wait..."
-                      : mode === "register"
-                          ? "Register"
-                          : "Login"}
-                </button>
-              </form>
-
-              <p>
-                {mode === "register"
-                    ? "Already registered?"
-                    : "New student?"}{" "}
-                <button
-                    type="button"
-                    onClick={() => {
-                      setMode(mode === "register" ? "login" : "register");
-                      setMessage("");
-                    }}
-                    style={{
-                      border: "none",
-                      background: "none",
-                      color: "#2457d6",
-                      cursor: "pointer",
-                      textDecoration: "underline",
-                    }}
-                >
-                  {mode === "register" ? "Login here" : "Register here"}
-                </button>
-              </p>
-
-              {message && (
-                  <p role="status" style={{ color: "#b42318" }}>
-                    {message}
+          <ol>
+            {questions.map((question) => (
+                <li key={question.id}>
+                  <p>
+                    <strong>{question.questionText}</strong>
                   </p>
-              )}
-            </section>
-        ) : (
-            <>
-              <header
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: "12px",
-                    flexWrap: "wrap",
-                  }}
-              >
-                <div>
-                  <h1>Online Quiz Exam System</h1>
-                  <p>Welcome, {student.name}!</p>
-                </div>
 
-                <div>
+                  <ul>
+                    <li>A. {question.optionA}</li>
+                    <li>B. {question.optionB}</li>
+                    <li>C. {question.optionC}</li>
+                    <li>D. {question.optionD}</li>
+                  </ul>
+
+                  <p>Correct answer: {question.correctAnswer}</p>
+
                   <button
-                      style={buttonStyle}
-                      onClick={() => setShowAdmin(true)}
-                  >
-                    Admin Panel
-                  </button>
-
-                  <button style={buttonStyle} onClick={logout}>
-                    Logout
-                  </button>
-                </div>
-              </header>
-
-              {message && <p role="status">{message}</p>}
-
-              {questions.map((q, index) => (
-                  <section
-                      key={q.id}
-                      style={{
-                        padding: "18px",
-                        margin: "18px 0",
-                        border: "1px solid #ddd",
-                        borderRadius: "10px",
-                      }}
-                  >
-                    <h3>
-                      {index + 1}. {q.questionText}
-                    </h3>
-
-                    {["A", "B", "C", "D"].map((letter) => (
-                        <label
-                            key={letter}
-                            style={{
-                              display: "block",
-                              padding: "8px",
-                              cursor: "pointer",
-                            }}
-                        >
-                          <input
-                              type="radio"
-                              name={`question-${q.id}`}
-                              checked={answers[q.id] === letter}
-                              disabled={result !== null}
-                              onChange={() =>
-                                  setAnswers({
-                                    ...answers,
-                                    [q.id]: letter,
-                                  })
-                              }
-                          />{" "}
-                          {letter}. {q[`option${letter}`]}
-                        </label>
-                    ))}
-                  </section>
-              ))}
-
-              {questions.length === 0 && !message && (
-                  <p>Loading questions...</p>
-              )}
-
-              {questions.length > 0 && !result && (
-                  <button
-                      style={buttonStyle}
-                      onClick={submitQuiz}
+                      type="button"
+                      onClick={() => handleDeleteQuestion(question.id)}
                       disabled={loading}
                   >
-                    {loading ? "Submitting..." : "Submit Quiz"}
+                    Delete
                   </button>
-              )}
-
-              {result && (
-                  <section
-                      style={{
-                        padding: "20px",
-                        marginTop: "20px",
-                        borderRadius: "10px",
-                        background: "#eef5ff",
-                      }}
-                  >
-                    <h2>Quiz Result</h2>
-                    <p>Total Questions: {result.totalQuestions}</p>
-                    <p>Correct Answers: {result.correctAnswers}</p>
-                    <p>Wrong Answers: {result.wrongAnswers}</p>
-                    <p>
-                      Percentage: {Number(result.percentage).toFixed(2)}%
-                    </p>
-                  </section>
-              )}
-            </>
-        )}
+                </li>
+            ))}
+          </ol>
+        </section>
       </main>
   );
 }
-
-export default App;
