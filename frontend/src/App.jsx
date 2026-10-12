@@ -1,379 +1,230 @@
-
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import "./App.css";
+import AdminPanel from "./AdminPanel";
 
 const API = "https://online-quiz-exam-system.onrender.com";
 
-const emptyQuestion = {
-  questionText: "",
-  optionA: "",
-  optionB: "",
-  optionC: "",
-  optionD: "",
-  correctAnswer: "A",
-};
-
-async function apiRequest(path, options = {}) {
-  const response = await fetch(`${API}${path}`, {
-    ...options,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
-
-  const text = await response.text();
-  let data = null;
-
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-        data?.message ||
-        (typeof data === "string" && data) ||
-        `Request failed (${response.status})`
-    );
-  }
-
-  return data;
-}
-
-export default function AdminPanel({ onBack }) {
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [checking, setChecking] = useState(true);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+export default function App() {
+  const [page, setPage] = useState("home");
+  const [studentName, setStudentName] = useState("");
   const [questions, setQuestions] = useState([]);
-  const [form, setForm] = useState(emptyQuestion);
+  const [answers, setAnswers] = useState({});
+  const [currentQuestion, setCurrentQuestion] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [score, setScore] = useState(null);
 
-  useEffect(() => {
-    let active = true;
-
-    apiRequest("/api/admin-auth/check")
-        .then(() => {
-          if (active) setLoggedIn(true);
-        })
-        .catch(() => {
-          if (active) setLoggedIn(false);
-        })
-        .finally(() => {
-          if (active) setChecking(false);
-        });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (loggedIn) {
-      loadQuestions();
-    }
-    // loadQuestions is intentionally triggered when login status changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loggedIn]);
-
-  async function loadQuestions() {
-    setLoading(true);
-    setError("");
-
-    try {
-      const data = await apiRequest("/api/admin/questions");
-      setQuestions(Array.isArray(data) ? data : []);
-    } catch (err) {
-      setError(err.message || "Could not load questions.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleLogin(event) {
+  async function startQuiz(event) {
     event.preventDefault();
-    setError("");
-    setMessage("");
-    setLoading(true);
 
-    try {
-      await apiRequest("/api/admin-auth/login", {
-        method: "POST",
-        body: JSON.stringify({ username, password }),
-      });
+    const name = studentName.trim();
 
-      setPassword("");
-      setLoggedIn(true);
-      setMessage("Admin login successful.");
-    } catch (err) {
-      setError(err.message || "Admin login failed.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleFormChange(event) {
-    const { name, value } = event.target;
-    setForm((previous) => ({ ...previous, [name]: value }));
-  }
-
-  async function handleAddQuestion(event) {
-    event.preventDefault();
-    setError("");
-    setMessage("");
-    setLoading(true);
-
-    const payload = {
-      ...form,
-      questionText: form.questionText.trim(),
-      optionA: form.optionA.trim(),
-      optionB: form.optionB.trim(),
-      optionC: form.optionC.trim(),
-      optionD: form.optionD.trim(),
-      correctAnswer: form.correctAnswer.toUpperCase(),
-    };
-
-    try {
-      await apiRequest("/api/admin/questions", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-
-      setForm({ ...emptyQuestion });
-      setMessage("Question added successfully.");
-      await loadQuestions();
-    } catch (err) {
-      setError(err.message || "Could not add question.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleDeleteQuestion(id) {
-    if (!window.confirm("Are you sure you want to delete this question?")) {
+    if (!name) {
+      setError("Please enter your name.");
       return;
     }
 
-    setError("");
-    setMessage("");
     setLoading(true);
+    setError("");
 
     try {
-      await apiRequest(`/api/admin/questions/${id}`, {
-        method: "DELETE",
-      });
+      const response = await fetch(`${API}/api/questions`);
 
-      setQuestions((previous) =>
-          previous.filter((question) => question.id !== id)
+      if (!response.ok) {
+        throw new Error("Unable to load quiz questions.");
+      }
+
+      const data = await response.json();
+
+      if (!Array.isArray(data) || data.length === 0) {
+        throw new Error("No quiz questions are available yet.");
+      }
+
+      setStudentName(name);
+      setQuestions(data);
+      setAnswers({});
+      setCurrentQuestion(0);
+      setScore(null);
+      setPage("quiz");
+    } catch (err) {
+      setError(
+        err.message || "Could not connect to the quiz server."
       );
-      setMessage("Question deleted successfully.");
-    } catch (err) {
-      setError(err.message || "Could not delete question.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleLogout() {
+  function selectAnswer(option) {
+    setAnswers((previous) => ({
+      ...previous,
+      [currentQuestion]: option,
+    }));
+  }
+
+  function nextQuestion() {
+    if (currentQuestion < questions.length - 1) {
+      setCurrentQuestion((previous) => previous + 1);
+    }
+  }
+
+  function previousQuestion() {
+    if (currentQuestion > 0) {
+      setCurrentQuestion((previous) => previous - 1);
+    }
+  }
+
+  function submitQuiz() {
+    const totalScore = questions.reduce((total, question, index) => {
+      return total +
+        (answers[index] === question.correctAnswer ? 1 : 0);
+    }, 0);
+
+    setScore(totalScore);
+    setPage("result");
+  }
+
+  function backToHome() {
+    setPage("home");
     setError("");
-    setMessage("");
-    setLoading(true);
-
-    try {
-      await apiRequest("/api/admin-auth/logout", {
-        method: "POST",
-      });
-
-      setLoggedIn(false);
-      setQuestions([]);
-      setMessage("Logged out successfully.");
-    } catch (err) {
-      setError(err.message || "Logout failed.");
-    } finally {
-      setLoading(false);
-    }
+    setAnswers({});
+    setQuestions([]);
+    setCurrentQuestion(0);
+    setScore(null);
   }
 
-  if (checking) {
+  if (page === "admin") {
+    return <AdminPanel onBack={backToHome} />;
+  }
+
+  if (page === "quiz") {
+    const question = questions[currentQuestion];
+
+    const options = [
+      ["A", question.optionA],
+      ["B", question.optionB],
+      ["C", question.optionC],
+      ["D", question.optionD],
+    ];
+
     return (
-        <main className="admin-panel">
-          <p>Checking admin session...</p>
-        </main>
+      <main className="app-container">
+        <section className="quiz-card">
+          <h1>Online Quiz</h1>
+          <p>Student: {studentName}</p>
+          <p>
+            Question {currentQuestion + 1} of {questions.length}
+          </p>
+
+          <h2>{question.questionText}</h2>
+
+          <div className="quiz-options">
+            {options.map(([key, value]) => (
+              <label key={key} className="quiz-option">
+                <input
+                  type="radio"
+                  name={`question-${currentQuestion}`}
+                  value={key}
+                  checked={answers[currentQuestion] === key}
+                  onChange={() => selectAnswer(key)}
+                />
+                <span>
+                  {key}. {value}
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <div className="quiz-actions">
+            <button
+              type="button"
+              onClick={previousQuestion}
+              disabled={currentQuestion === 0}
+            >
+              Previous
+            </button>
+
+            {currentQuestion < questions.length - 1 ? (
+              <button type="button" onClick={nextQuestion}>
+                Next
+              </button>
+            ) : (
+              <button type="button" onClick={submitQuiz}>
+                Submit Quiz
+              </button>
+            )}
+          </div>
+
+          <p>
+            Answered: {Object.keys(answers).length} / {questions.length}
+          </p>
+        </section>
+      </main>
     );
   }
 
-  if (!loggedIn) {
+  if (page === "result") {
     return (
-        <main className="admin-panel">
-          <h2>Admin Login</h2>
-          <p>Sign in to manage quiz questions.</p>
+      <main className="app-container">
+        <section className="quiz-card">
+          <h1>Quiz Result</h1>
+          <h2>Well done, {studentName}!</h2>
+          <p>
+            Your score: {score} out of {questions.length}
+          </p>
+          <p>
+            Percentage:{" "}
+            {questions.length
+              ? ((score / questions.length) * 100).toFixed(2)
+              : 0}%
+          </p>
 
-          {message && <p role="status">{message}</p>}
-          {error && <p role="alert" className="error-message">{error}</p>}
-
-          <form onSubmit={handleLogin}>
-            <label htmlFor="admin-username">Username</label>
-            <input
-                id="admin-username"
-                type="text"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                autoComplete="username"
-                required
-            />
-
-            <label htmlFor="admin-password">Password</label>
-            <input
-                id="admin-password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                required
-            />
-
-            <button type="submit" disabled={loading}>
-              {loading ? "Please wait..." : "Login"}
-            </button>
-          </form>
-
-          <button type="button" onClick={onBack}>
-            Back to Quiz
+          <button type="button" onClick={backToHome}>
+            Back to Home
           </button>
-        </main>
+        </section>
+      </main>
     );
   }
 
   return (
-      <main className="admin-panel">
-        <header className="admin-header">
-          <h2>Admin Dashboard</h2>
+    <main className="app-container">
+      <section className="login-card">
+        <h1>Online Quiz Exam System</h1>
+        <p>Welcome! Enter your name to start the quiz.</p>
 
-          <div>
-            <button type="button" onClick={loadQuestions} disabled={loading}>
-              Refresh
-            </button>
-            <button type="button" onClick={handleLogout} disabled={loading}>
-              Logout
-            </button>
-            <button type="button" onClick={onBack}>
-              Back to Quiz
-            </button>
-          </div>
-        </header>
+        {error && <p className="error-message" role="alert">{error}</p>}
 
-        {message && <p role="status">{message}</p>}
-        {error && <p role="alert" className="error-message">{error}</p>}
+        <form onSubmit={startQuiz}>
+          <label htmlFor="studentName">Student Name</label>
+          <input
+            id="studentName"
+            type="text"
+            placeholder="Enter your name"
+            value={studentName}
+            onChange={(event) => setStudentName(event.target.value)}
+            autoComplete="name"
+            required
+          />
 
-        <section>
-          <h3>Add a Question</h3>
+          <button type="submit" disabled={loading}>
+            {loading ? "Loading Questions..." : "Start Quiz"}
+          </button>
+        </form>
 
-          <form onSubmit={handleAddQuestion}>
-            <label htmlFor="questionText">Question</label>
-            <textarea
-                id="questionText"
-                name="questionText"
-                value={form.questionText}
-                onChange={handleFormChange}
-                required
-            />
+        <hr />
 
-            <label htmlFor="optionA">Option A</label>
-            <input
-                id="optionA"
-                name="optionA"
-                value={form.optionA}
-                onChange={handleFormChange}
-                required
-            />
-
-            <label htmlFor="optionB">Option B</label>
-            <input
-                id="optionB"
-                name="optionB"
-                value={form.optionB}
-                onChange={handleFormChange}
-                required
-            />
-
-            <label htmlFor="optionC">Option C</label>
-            <input
-                id="optionC"
-                name="optionC"
-                value={form.optionC}
-                onChange={handleFormChange}
-                required
-            />
-
-            <label htmlFor="optionD">Option D</label>
-            <input
-                id="optionD"
-                name="optionD"
-                value={form.optionD}
-                onChange={handleFormChange}
-                required
-            />
-
-            <label htmlFor="correctAnswer">Correct Answer</label>
-            <select
-                id="correctAnswer"
-                name="correctAnswer"
-                value={form.correctAnswer}
-                onChange={handleFormChange}
-                required
-            >
-              <option value="A">Option A</option>
-              <option value="B">Option B</option>
-              <option value="C">Option C</option>
-              <option value="D">Option D</option>
-            </select>
-
-            <button type="submit" disabled={loading}>
-              {loading ? "Please wait..." : "Add Question"}
-            </button>
-          </form>
-        </section>
-
-        <section>
-          <h3>Existing Questions ({questions.length})</h3>
-
-          {loading && <p>Loading...</p>}
-
-          {!loading && questions.length === 0 && (
-              <p>No questions found.</p>
-          )}
-
-          <ol>
-            {questions.map((question) => (
-                <li key={question.id}>
-                  <p>
-                    <strong>{question.questionText}</strong>
-                  </p>
-
-                  <ul>
-                    <li>A. {question.optionA}</li>
-                    <li>B. {question.optionB}</li>
-                    <li>C. {question.optionC}</li>
-                    <li>D. {question.optionD}</li>
-                  </ul>
-
-                  <p>Correct answer: {question.correctAnswer}</p>
-
-                  <button
-                      type="button"
-                      onClick={() => handleDeleteQuestion(question.id)}
-                      disabled={loading}
-                  >
-                    Delete
-                  </button>
-                </li>
-            ))}
-          </ol>
-        </section>
-      </main>
+        <button
+          type="button"
+          className="admin-button"
+          onClick={() => {
+            setError("");
+            setPage("admin");
+          }}
+        >
+          Admin Login
+        </button>
+      </section>
+    </main>
   );
 }
