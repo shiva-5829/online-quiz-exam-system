@@ -2,6 +2,8 @@ package com.quiz.onlinequizbackend;
 
 
 
+
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -17,6 +19,8 @@ public class SecurityConfig {
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/**")
                         .allowedOrigins(
+                                "http://localhost:5173",
+                                "http://localhost:5174",
                                 "https://online-quiz-exam-system.vercel.app",
                                 "https://online-quiz-exam-system-ptx0zj6q3-shiva-abf2.vercel.app"
                         )
@@ -24,9 +28,9 @@ public class SecurityConfig {
                                 "GET", "POST", "PUT",
                                 "DELETE", "OPTIONS"
                         )
-                        .allowedHeaders("*");
+                        .allowedHeaders("*")
+                        .allowCredentials(true);
             }
         };
     }
 }
-
